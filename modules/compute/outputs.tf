@@ -1,0 +1,1 @@
+#C3S-IaC Module compute Output.tf - Terraform coding for C3S infrastrcture as code
