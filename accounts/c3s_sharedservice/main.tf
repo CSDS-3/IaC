@@ -371,7 +371,7 @@ resource "aws_instance" "splunk_vm_index" {
 
 resource "aws_instance" "pri_app_vm_snipe" {
   ami                              = "ami-0aedf6b1cb669b4c7"
-  instance_type                    = "t2.micro"
+  instance_type                    = "t2.small"
   associate_public_ip_address      = false
   key_name                         = module.tlskey.public_key_name
   monitoring                       = true
