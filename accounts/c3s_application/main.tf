@@ -5,7 +5,7 @@
 
 
 provider "aws" {
-  region = "us-east-1"
+  region = "us-west-1"
   profile = "302071135337_12hrAdministratorAccess"
 }
 
@@ -26,6 +26,21 @@ module network {
 }
 
 
+resource "aws_vpc_ipv4_cidr_block_association" "secondary_cidr" {
+  vpc_id     = module.network.vpc-id
+  cidr_block = "100.192.8.0/25"
+}
+
+resource "aws_subnet" "private_subnet" {
+	vpc_id     = module.network.vpc-id
+	cidr_block = "100.192.8.0/25"
+  availability_zone = "us-east-1a"
+	tags = {
+    		Name = "Secondary Subnet"
+  }
+}
+
+
 #======================================================================
 # private Security Group 
 #======================================================================
@@ -40,7 +55,7 @@ resource "aws_security_group" "Application_pri_SG" {
     from_port        = -1
     to_port          = -1
     protocol         = "ICMP"
-    cidr_blocks      = ["10.0.0.0/23", "10.0.4.0/23"]
+    cidr_blocks      = ["10.0.0.0/23", "10.0.2.0/23"]
   }
 
   ingress {
@@ -48,7 +63,7 @@ resource "aws_security_group" "Application_pri_SG" {
     from_port        = 22
     to_port          = 22
     protocol         = "tcp"
-    cidr_blocks      = ["10.0.0.0/23", "10.0.4.0/23"]
+    cidr_blocks      = ["10.0.0.0/23", "10.0.2.0/23"]
   }
 
   ingress {
@@ -56,7 +71,7 @@ resource "aws_security_group" "Application_pri_SG" {
     from_port        = 80
     to_port          = 80
     protocol         = "tcp"
-    cidr_blocks      = ["10.0.0.0/23", "10.0.4.0/23"]
+    cidr_blocks      = ["10.0.0.0/23", "10.0.2.0/23"]
   }
 
 
@@ -65,7 +80,7 @@ resource "aws_security_group" "Application_pri_SG" {
     from_port        = 443
     to_port          = 443
     protocol         = "tcp"
-    cidr_blocks      = ["10.0.0.0/23", "10.0.4.0/23"]
+    cidr_blocks      = ["10.0.0.0/23", "10.0.2.0/23"]
   }
 
 
@@ -149,6 +164,36 @@ resource "aws_instance" "App_window" {
 
   tags = {
     Name    = "Application host Windows"
+    Project = "C3S"
+  }
+}
+#======================================================================
+# Application Instance in Private Subnet (2 MAC)
+#======================================================================
+
+resource "aws_instance" "App_mac" {
+  count                            = var.vm_count  
+  ami                              = "ami-00805552fa999b1a0"
+  instance_type                    = "mac1.metal"
+  associate_public_ip_address      = false
+  key_name                         = module.tlskey.public_key_name
+  monitoring                       = true
+  subnet_id                        = aws_subnet.private_subnet.id
+  vpc_security_group_ids           = [aws_security_group.Application_pri_SG.id]
+  
+
+  root_block_device {
+    volume_size           = "100"
+    delete_on_termination = true
+    encrypted             = true 
+  }
+
+  lifecycle {
+    ignore_changes = [ami]
+  }
+
+  tags = {
+    Name    = "Application Host MAC-OS"
     Project = "C3S"
   }
 }
