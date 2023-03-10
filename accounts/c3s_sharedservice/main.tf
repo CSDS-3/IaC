@@ -6,7 +6,7 @@
 
 
 provider "aws" {
-  region = "us-east-1"
+  region = "us-west-1"
   profile = "358664794210_12hrAdministratorAccess"
 }
 
@@ -24,6 +24,19 @@ module network {
     create_dmz = true
 }
 
+resource "aws_vpc_ipv4_cidr_block_association" "secondary_cidr" {
+  vpc_id     = module.network.vpc-id
+  cidr_block = "100.64.0.0/25"
+}
+
+resource "aws_subnet" "private_subnet" {
+	vpc_id     = module.network.vpc-id
+	cidr_block = "100.64.0.0/25"
+  availability_zone = "us-east-1a"
+	tags = {
+    		Name = "Secondary Subnet"
+  }
+}
 
 #======================================================================
 #  VPC internet_gateway for DMZ 
@@ -78,7 +91,7 @@ resource "aws_security_group" "SharedSevice_DMZ_SG" {
     from_port        = 22
     to_port          = 22
     protocol         = "tcp"
-    cidr_blocks      = ["0.0.0.0/0"]
+    cidr_blocks      = ["10.0.0.0/23", "10.0.0.0/23"]
   }
 
   ingress {
@@ -104,7 +117,7 @@ resource "aws_security_group" "SharedSevice_DMZ_SG" {
     from_port        = 3389
     to_port          = 3389
     protocol         = "tcp"
-    cidr_blocks      = ["0.0.0.0/0"]
+    cidr_blocks      = ["24.2.164.79/32"]
   }
 
 
@@ -136,7 +149,7 @@ resource "aws_security_group" "SharedSevice_pri_SG" {
     from_port        = -1
     to_port          = -1
     protocol         = "ICMP"
-    security_groups = [aws_security_group.SharedSevice_DMZ_SG.id]
+    security_groups = [aws_security_group.SharedSevice_DMZ_SG.id,aws_security_group.SharedSevice_DMZ_SG.id]
     #cidr_blocks      = [network.subnet_cidr_block_dmz]
   }
 
@@ -145,7 +158,7 @@ resource "aws_security_group" "SharedSevice_pri_SG" {
     from_port        = 22
     to_port          = 22
     protocol         = "tcp"
-    security_groups = [aws_security_group.SharedSevice_DMZ_SG.id]
+    security_groups = [aws_security_group.SharedSevice_DMZ_SG.id,aws_security_group.SharedSevice_DMZ_SG.id]
     #cidr_blocks      = [network.subnet_cidr_block_dmz]
   }
 
@@ -154,7 +167,7 @@ resource "aws_security_group" "SharedSevice_pri_SG" {
     from_port        = 80
     to_port          = 80
     protocol         = "tcp"
-    security_groups = [aws_security_group.SharedSevice_DMZ_SG.id]
+    security_groups = [aws_security_group.SharedSevice_DMZ_SG.id,aws_security_group.SharedSevice_DMZ_SG.id]
     #cidr_blocks      = [network.subnet_cidr_block_dmz]
   }
 
@@ -164,10 +177,18 @@ resource "aws_security_group" "SharedSevice_pri_SG" {
     from_port        = 443
     to_port          = 443
     protocol         = "tcp"
-    security_groups = [aws_security_group.SharedSevice_DMZ_SG.id]
+    security_groups = [aws_security_group.SharedSevice_DMZ_SG.id,aws_security_group.SharedSevice_DMZ_SG.id]
     #cidr_blocks      = [network.subnet_cidr_block_dmz]
   }
 
+  ingress {
+    description      = "SSH from VPC"
+    from_port        = 3389
+    to_port          = 22
+    protocol         = "tcp"
+    security_groups = [aws_security_group.SharedSevice_DMZ_SG.id,aws_security_group.SharedSevice_DMZ_SG.id]
+    #cidr_blocks      = [network.subnet_cidr_block_dmz]
+  }
 
   ingress {
     description      = "Splunp UI"
@@ -183,7 +204,7 @@ resource "aws_security_group" "SharedSevice_pri_SG" {
     from_port        = 8089
     to_port          = 8089
     protocol         = "tcp"
-    security_groups = [aws_security_group.SharedSevice_DMZ_SG.id]
+    security_groups = ["100.64.0.0/25","10.0.0.0/16"]
     #cidr_blocks      = [network.subnet_cidr_block_dmz]
   }
 
@@ -192,7 +213,7 @@ resource "aws_security_group" "SharedSevice_pri_SG" {
     from_port        = 9997
     to_port          = 9997
     protocol         = "tcp"
-    security_groups = [aws_security_group.SharedSevice_DMZ_SG.id]
+    security_groups = ["100.64.0.0/25","10.0.0.0/16"]
     #cidr_blocks      = [network.subnet_cidr_block_dmz]
   }
 
@@ -251,6 +272,35 @@ resource "aws_instance" "bastion" {
   }
 }
 
+#======================================================================
+# Bastion2 Instance in DMZ
+#======================================================================
+
+resource "aws_instance" "bastion2" {
+  ami                              = "ami-0b5eea76982371e91"
+  instance_type                    = "t2.micro"
+  associate_public_ip_address      = true
+  key_name                         = module.tlskey.public_key_name
+  monitoring                       = true
+  subnet_id                        = module.network.dmz-sn-id
+  vpc_security_group_ids           = [aws_security_group.SharedSevice_DMZ_SG.id]
+
+
+  root_block_device {
+    volume_size           = "8"
+    delete_on_termination = true
+    encrypted             = true 
+  }
+
+  lifecycle {
+    ignore_changes = [ami]
+  }
+
+  tags = {
+    Name    = "Bastion-2 host"
+    Project = "C3S"
+  }
+}
 
 #======================================================================
 # Bastion Windows Instance in DMZ
@@ -258,7 +308,7 @@ resource "aws_instance" "bastion" {
 
 resource "aws_instance" "bastion_win" {
   ami                              = "ami-03cf1a25c0360a382"
-  instance_type                    = "t2.micro"
+  instance_type                    = "t2.large"
   associate_public_ip_address      = true
   key_name                         = module.tlskey.public_key_name
   monitoring                       = true
@@ -294,7 +344,7 @@ module cloudtrail_s3 {
 
 
 #======================================================================
-# Three vms in private subnet
+# "Heavy_Forwarder", "Search_Head" vms in private subnet
 #======================================================================
 
 
@@ -332,7 +382,9 @@ resource "aws_instance" "splunk_vm_forw" {
 }
 
 
-
+#======================================================================
+# Splunk Indexer Instance in private
+#======================================================================
 
 resource "aws_instance" "splunk_vm_index" {
   ami                              = "ami-0b5eea76982371e91"
@@ -363,15 +415,41 @@ resource "aws_instance" "splunk_vm_index" {
 
 
 #======================================================================
-# Three vms in private subnet - "Ansible", "Scanning","Snipe_It"
+# scanning Instance in private
 #======================================================================
 
+resource "aws_instance" "pri_app_vm_scan" {
+  ami                              = "ami-0b5eea76982371e91"
+  instance_type                    = "t2.medium"
+  associate_public_ip_address      = false
+  key_name                         = module.tlskey.public_key_name
+  monitoring                       = true
+  subnet_id                        = module.network.pri-sn-id
+  vpc_security_group_ids           = [aws_security_group.SharedSevice_pri_SG.id]
+  
 
+  root_block_device {
+    volume_size           = "50"
+    delete_on_termination = true
+    encrypted             = true 
+  }
 
+  lifecycle {
+    ignore_changes = [ami]
+  }
 
+ 
+  tags = {
+    Name    = "scanning"
+    Project = "C3S"
+  }
+}
+#======================================================================
+# Snipe_It Instance in private
+#======================================================================
 resource "aws_instance" "pri_app_vm_snipe" {
   ami                              = "ami-0aedf6b1cb669b4c7"
-  instance_type                    = "t2.small"
+  instance_type                    = "t2.large"
   associate_public_ip_address      = false
   key_name                         = module.tlskey.public_key_name
   monitoring                       = true
@@ -395,10 +473,12 @@ resource "aws_instance" "pri_app_vm_snipe" {
     Project = "C3S"
   }
 }
-
+#======================================================================
+# ansible Instance in private
+#======================================================================
 resource "aws_instance" "pri_app_vm_ansible" {
   ami                              = "ami-06640050dc3f556bb"
-  instance_type                    = "t2.micro"
+  instance_type                    = "t2.large"
   associate_public_ip_address      = false
   key_name                         = module.tlskey.public_key_name
   monitoring                       = true
@@ -419,6 +499,125 @@ resource "aws_instance" "pri_app_vm_ansible" {
  
   tags = {
     Name    = "Ansible"
+    Project = "C3S"
+  }
+}
+
+#======================================================================
+# C3S_automation Instance in private
+#======================================================================
+
+resource "aws_instance" "C3S_automation" {
+  ami                              = "ami-0b5eea76982371e91"
+  instance_type                    = "t2.micro"
+  associate_public_ip_address      = true
+  key_name                         = module.tlskey.public_key_name
+  monitoring                       = true
+  subnet_id                        = module.network.dmz-sn-id
+  vpc_security_group_ids           = [aws_security_group.SharedSevice_DMZ_SG.id]
+
+
+  root_block_device {
+    volume_size           = "8"
+    delete_on_termination = true
+    encrypted             = true 
+  }
+
+  lifecycle {
+    ignore_changes = [ami]
+  }
+
+  tags = {
+    Name    = "C3S_automation"
+    Project = "C3S"
+  }
+}
+#======================================================================
+# ubuntu test3 Instance in DMZ
+#======================================================================
+
+resource "aws_instance" "ubuntu" {
+  ami                              = "ami-00874d747dde814fa"
+  instance_type                    = "t2.micro"
+  associate_public_ip_address      = true
+  key_name                         = module.tlskey.public_key_name
+  monitoring                       = true
+  subnet_id                        = module.network.dmz-sn-id
+  vpc_security_group_ids           = [aws_security_group.SharedSevice_DMZ_SG.id]
+
+
+  root_block_device {
+    volume_size           = "8"
+    delete_on_termination = true
+    encrypted             = true 
+  }
+
+  lifecycle {
+    ignore_changes = [ami]
+  }
+
+  tags = {
+    Name    = "ubuntu_test3"
+    Project = "C3S"
+  }
+}
+#======================================================================
+# Kali Server in Private Subnet
+#======================================================================
+
+resource "aws_instance" "kali" {
+  ami                              = "ami-06e9ed0799116d0dd"
+  instance_type                    = "t2.medium"
+  associate_public_ip_address      = true
+  key_name                         = module.tlskey.public_key_name
+  monitoring                       = true
+  subnet_id                        = module.network.dmz-sn-id
+  vpc_security_group_ids           = [aws_security_group.SharedSevice_DMZ_SG.id]
+
+
+  root_block_device {
+    volume_size           = "60"
+    delete_on_termination = true
+    encrypted             = true 
+  }
+
+  lifecycle {
+    ignore_changes = [ami]
+  }
+
+  tags = {
+    Name    = "Kali Server in Private Subnet"
+    Project = "C3S"
+  }
+}
+
+#======================================================================
+# Application Instance in Private Subnet (2 windows)
+#======================================================================
+
+resource "aws_instance" "App_mac" {
+  count                            = 2
+  ami                              = "ami-0e58466bb52b01adb"
+  instance_type                    = "t3.medium"
+  associate_public_ip_address      = false
+  key_name                         = module.tlskey.public_key_name
+  monitoring                       = true
+  subnet_id                        = aws_subnet.private_subnet.id
+  vpc_security_group_ids           = [aws_security_group.SharedSevice_DMZ_SG.id]
+  
+
+  root_block_device {
+    volume_size           = "32"
+    delete_on_termination = true
+    encrypted             = true 
+  }
+
+  lifecycle {
+    ignore_changes = [ami]
+  }
+
+  tags = {
+    Name    = "Application Host Windows"
     Project = "C3S"
   }
 }
